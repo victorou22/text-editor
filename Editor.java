@@ -4,6 +4,8 @@ import java.util.List;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
 import javafx.geometry.VPos;
@@ -28,28 +30,31 @@ import java.util.Objects;
 
 public class Editor extends Application {
     private final Rectangle cursor;
-    private static final int WINDOW_WIDTH = 500;
-    private static final int WINDOW_HEIGHT = 500;
     private static final int STARTING_FONT_SIZE = 12;
     private static int fontSize = STARTING_FONT_SIZE;
+    private static final int MARGIN = 5;
     private static String fontName = "Verdana";
-    private static double currXPos = 5.0;       //xPos of the cursor
+    private static double currXPos = MARGIN;       //xPos of the cursor
     private static double currYPos = 0.0;       //yPos of the cursor
+    private static int windowWidth;
+    private static int windowHeight;
     public Group root;
     public Group textRoot;
-    private FastLinkedList buffer = new FastLinkedList();       //buffer used to store the characters input
+    private FastLinkedList buffer;       //buffer used to store the characters input
 
     //* Constructor */
     public Editor() {
         Text tempHeight = charToText(currXPos, currYPos, "a");
         double charHeight = tempHeight.getLayoutBounds().getHeight();
         cursor = new Rectangle(currXPos, currYPos, 0.0, charHeight);
+        buffer = new FastLinkedList(charHeight);
+        
+        windowWidth = 500;
+        windowHeight = 500;
     }
     
     /** An EventHandler to handle keys that get pressed. */
     private class KeyEventHandler implements EventHandler<KeyEvent> {
-        int textCenterX;
-        int textCenterY;
         private static final double STARTING_TEXT_POSITION_X = 5.0;
         private static final double STARTING_TEXT_POSITION_Y = 0.0;
 
@@ -80,20 +85,20 @@ public class Editor extends Application {
                     Text toBeAdded = charToText(currXPos, currYPos, characterTyped);
                     currXPos = 5.0;
                     currYPos += toBeAdded.getLayoutBounds().getHeight()/2;      //newlines are double height
-                    updateCursor();
                     buffer.addChar(toBeAdded);
                     keyEvent.consume();
-                    buffer.reformatText(5.0, 0.0);
+                    buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    updateCursor();
                 } else if (characterTyped.length() > 0 && characterTyped.charAt(0) != 8) {
                     // Ignore control keys, which have non-zero length, as well as the backspace
                     // key, which is represented as a character of value = 8 on Windows.
                     Text toBeAdded = charToText(currXPos, currYPos, characterTyped);
-                    currXPos += Math.ceil(toBeAdded.getLayoutBounds().getWidth());        //increase the x position by the width
-                    updateCursor();
+                    currXPos += getTextWidth(toBeAdded);        //increase the x position by the width
                     buffer.addChar(toBeAdded);
                     textRoot.getChildren().add(toBeAdded);
                     keyEvent.consume();
-                    buffer.reformatText(5.0, 0.0);
+                    buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    updateCursor();
                 }
 
             } else if (keyEvent.getEventType() == KeyEvent.KEY_PRESSED) {
@@ -122,10 +127,10 @@ public class Editor extends Application {
                     updateCursor();
                 } else if (code == KeyCode.BACK_SPACE) {
                     Text deleted = buffer.deleteChar();
-                    currXPos -= Math.ceil(deleted.getLayoutBounds().getWidth());
-                    updateCursor();
+                    currXPos -= getTextWidth(deleted);
                     textRoot.getChildren().remove(deleted);
-                    buffer.reformatText(5.0, 0.0);
+                    buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    updateCursor();
                     //reflow
                 }
             }
@@ -157,6 +162,10 @@ public class Editor extends Application {
         return toBeAdded;
     }
     
+    private static int maxMinusMargin(int max) {
+        return max - MARGIN;
+    }
+    
     private void readFile(String inputFileName) {
         try {
             File inputFile = new File(inputFileName);
@@ -182,7 +191,7 @@ public class Editor extends Application {
                 // The integer read can be cast to a char, because we're assuming ASCII.
                 char charRead = (char) intRead;
                 Text toBeAdded = charToText(currXPos, currYPos, String.valueOf(charRead));                      //set text                      
-                currXPos += Math.ceil(toBeAdded.getLayoutBounds().getWidth());                  //increase the x position by the width 
+                currXPos += getTextWidth(toBeAdded);                  //increase the x position by the width 
                 buffer.addChar(toBeAdded);
                 textRoot.getChildren().add(toBeAdded);
             }
@@ -196,8 +205,14 @@ public class Editor extends Application {
         }
     }
     
+    private double getTextWidth(Text text) {
+        return Math.ceil(text.getLayoutBounds().getWidth());
+    }
+    
     /* Updates the position of the cursor **/
     private void updateCursor() {
+        currXPos = buffer.getCurrTextX() + getTextWidth(buffer.getCurrText());
+        currYPos = buffer.getCurrTextY();        
         cursor.setX(currXPos);
         cursor.setY(currYPos);
     }
@@ -247,7 +262,7 @@ public class Editor extends Application {
         root.getChildren().add(textRoot);
         // The Scene represents the window: its height and width will be the height and width
         // of the window displayed.
-        Scene scene = new Scene(root, WINDOW_WIDTH, WINDOW_HEIGHT, Color.WHITE);
+        Scene scene = new Scene(root, windowWidth, windowHeight, Color.WHITE);
         
         //Input text file
         List<String> inputs = getParameters().getRaw();
@@ -266,7 +281,7 @@ public class Editor extends Application {
         // EventHandler subclasses must override the "handle" function, which will be called
         // by javafx.
         EventHandler<KeyEvent> keyEventHandler =
-                new KeyEventHandler(WINDOW_WIDTH, WINDOW_HEIGHT);
+                new KeyEventHandler(windowWidth, windowHeight);
         // Register the event handler to be called for all KEY_PRESSED and KEY_TYPED events.
         scene.setOnKeyTyped(keyEventHandler);
         scene.setOnKeyPressed(keyEventHandler);
@@ -274,6 +289,34 @@ public class Editor extends Application {
         textRoot.getChildren().add(cursor);
         makeCursor();
         primaryStage.setTitle("Text Editor");
+        
+        // Register listeners that resize Allen when the window is re-sized.
+        // We're using some new syntax here to create a ChangeListener with an overridden
+        // changed() method; this is called instantiating an "anonymous class."  If you're curious
+        // to learn more about this syntax, try Googling "Java anonymous class".  Beware that
+        // IntelliJ sometimes collapses code blocks like this! If this happens, you can click on
+        // the "+" icon that's to the left of the code (and to the right of the line numbers) to
+        // expand the code again.
+        scene.widthProperty().addListener(new ChangeListener<Number>() {
+            @Override public void changed(
+                    ObservableValue<? extends Number> observableValue,
+                    Number oldScreenWidth,
+                    Number newScreenWidth) {
+                // Re-compute window width.
+                windowWidth = newScreenWidth.intValue();
+                buffer.reformatText(5.0, 0.0, windowWidth, windowHeight);
+            }
+        });
+        scene.heightProperty().addListener(new ChangeListener<Number>() {
+            @Override public void changed(
+                    ObservableValue<? extends Number> observableValue,
+                    Number oldScreenHeight,
+                    Number newScreenHeight) {
+                windowHeight = newScreenHeight.intValue();
+                buffer.reformatText(5.0, 0.0, windowWidth, windowHeight);
+            }
+        });
+
 
         // This is boilerplate, necessary to setup the window where things are displayed.
         primaryStage.setScene(scene);
