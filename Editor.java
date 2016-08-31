@@ -4,6 +4,7 @@ import java.util.List;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
@@ -27,12 +28,17 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Objects;
 
-
+/** 
+Text editor application
+Written by Victor Ou
+*/
+    
 public class Editor extends Application {
     private final Rectangle cursor;
     private static final int STARTING_FONT_SIZE = 12;
     private static int fontSize = STARTING_FONT_SIZE;
     private static final int MARGIN = 5;
+    private static double LINE_HEIGHT;
     private static String fontName = "Verdana";
     private static double currXPos = MARGIN;       //xPos of the cursor
     private static double currYPos = 0.0;       //yPos of the cursor
@@ -41,13 +47,14 @@ public class Editor extends Application {
     public Group root;
     public Group textRoot;
     private FastLinkedList buffer;       //buffer used to store the characters input
+    private static String fileName;
 
     //* Constructor */
     public Editor() {
         Text tempHeight = charToText(currXPos, currYPos, "a");
-        double charHeight = tempHeight.getLayoutBounds().getHeight();
-        cursor = new Rectangle(currXPos, currYPos, 0.0, charHeight);
-        buffer = new FastLinkedList(charHeight);
+        LINE_HEIGHT = tempHeight.getLayoutBounds().getHeight();
+        cursor = new Rectangle(currXPos, currYPos, 0.0, LINE_HEIGHT);
+        buffer = new FastLinkedList(LINE_HEIGHT);
         
         windowWidth = 500;
         windowHeight = 500;
@@ -76,19 +83,23 @@ public class Editor extends Application {
 
         @Override
         public void handle(KeyEvent keyEvent) {
-            if (keyEvent.getEventType() == KeyEvent.KEY_TYPED) {
+            if (keyEvent.getEventType() == KeyEvent.KEY_TYPED && !keyEvent.isShortcutDown()) {
                 // Use the KEY_TYPED event rather than KEY_PRESSED for letter keys, because with
                 // the KEY_TYPED event, javafx handles the "Shift" key and associated
                 // capitalization.
                 String characterTyped = keyEvent.getCharacter();
                 if (Objects.equals(characterTyped, "\r")) {
-                    Text toBeAdded = charToText(currXPos, currYPos, characterTyped);
+                    Text toBeAdded = charToText(currXPos, currYPos, "\n");
                     currXPos = 5.0;
                     currYPos += toBeAdded.getLayoutBounds().getHeight()/2;      //newlines are double height
                     buffer.addChar(toBeAdded);
                     keyEvent.consume();
                     buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
                     updateCursor();
+                    currXPos = MARGIN;
+                    currYPos += LINE_HEIGHT;
+                    cursor.setX(currXPos);
+                    cursor.setY(currYPos);
                 } else if (characterTyped.length() > 0 && characterTyped.charAt(0) != 8) {
                     // Ignore control keys, which have non-zero length, as well as the backspace
                     // key, which is represented as a character of value = 8 on Windows.
@@ -100,13 +111,18 @@ public class Editor extends Application {
                     buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
                     updateCursor();
                 }
+            }
 
-            } else if (keyEvent.getEventType() == KeyEvent.KEY_PRESSED) {
+            else if (keyEvent.getEventType() == KeyEvent.KEY_PRESSED) {
                 // Arrow keys should be processed using the KEY_PRESSED event, because KEY_PRESSED
                 // events have a code that we can check (KEY_TYPED events don't have an associated
                 // KeyCode).
                 KeyCode code = keyEvent.getCode();
-                if (code == KeyCode.UP) {
+                if (keyEvent.isShortcutDown()) {
+                    if (code == KeyCode.S) {
+                        writeFile(fileName);
+                    }
+                } else if (code == KeyCode.UP) {
                     fontSize += 5;
                     displayText.setFont(Font.font(fontName, fontSize));
                     centerText();
@@ -115,16 +131,19 @@ public class Editor extends Application {
                     displayText.setFont(Font.font(fontName, fontSize));
                     centerText();
                 } else if (code == KeyCode.LEFT) {
-                    if(currXPos <= STARTING_TEXT_POSITION_X) {
-                        return;
+                    if(!buffer.isBeginning()) {
+                        if (buffer.isFirstCharOfLine() && cursor.getX() != MARGIN) {
+                            cursor.setX(MARGIN);
+                        } else {
+                            buffer.moveToPreviousNode();
+                            updateCursor();
+                        }
                     }
-                    Text leftText = buffer.moveToPreviousNode();
-                    currXPos -= Math.ceil(leftText.getLayoutBounds().getWidth());
-                    updateCursor();
                 } else if (code == KeyCode.RIGHT) { //need to implement end of text
-                    Text rightText = buffer.moveToNextNode();
-                    currXPos += Math.ceil(rightText.getLayoutBounds().getWidth());
-                    updateCursor();
+                    if(!buffer.isEnd()) {
+                        buffer.moveToNextNode();
+                        updateCursor();
+                    }
                 } else if (code == KeyCode.BACK_SPACE) {
                     Text deleted = buffer.deleteChar();
                     currXPos -= getTextWidth(deleted);
@@ -166,14 +185,20 @@ public class Editor extends Application {
         return max - MARGIN;
     }
     
-    private void readFile(String inputFileName) {
+    private void writeFile(String outputFileName) {       
+        buffer.writeFile(outputFileName);
+    }
+    
+    private boolean readFile(String inputFileName) {
         try {
-            File inputFile = new File(inputFileName);
             // Check to make sure that the input file exists!
+            if (!inputFileName.endsWith(".txt")) {
+                System.out.println("Unable to open file name " + inputFileName);
+                System.exit(1);
+            }
+            File inputFile = new File(inputFileName);
             if (!inputFile.exists()) {
-                System.out.println("Unable to copy because file with name " + inputFileName
-                    + " does not exist");
-                return;
+                return false;
             }
             FileReader reader = new FileReader(inputFile);
             // It's good practice to read files using a buffered reader.  A buffered reader reads
@@ -191,11 +216,10 @@ public class Editor extends Application {
                 // The integer read can be cast to a char, because we're assuming ASCII.
                 char charRead = (char) intRead;
                 Text toBeAdded = charToText(currXPos, currYPos, String.valueOf(charRead));                      //set text                      
-                currXPos += getTextWidth(toBeAdded);                  //increase the x position by the width 
+                //currXPos += getTextWidth(toBeAdded);                  //increase the x position by the width 
                 buffer.addChar(toBeAdded);
                 textRoot.getChildren().add(toBeAdded);
             }
-
             // Close the reader and writer.
             bufferedReader.close();
         } catch (FileNotFoundException fileNotFoundException) {
@@ -203,6 +227,7 @@ public class Editor extends Application {
         } catch (IOException ioException) {
             System.out.println("Error when copying; exception was: " + ioException);
         }
+        return true;
     }
     
     private double getTextWidth(Text text) {
@@ -266,16 +291,17 @@ public class Editor extends Application {
         
         //Input text file
         List<String> inputs = getParameters().getRaw();
+        if (inputs.isEmpty()) {
+            System.out.println("Expected usage: editor.Editor <source filename>");
+            System.exit(1);
+        }
+        fileName = inputs.get(0);
         
         //Testing readFile
-        /*
-        try{
-            readFile(inputs.get(0));
-            buffer.print();
-        } catch (Exception e) {
-            System.out.println(e);
+        if (readFile(fileName)) {
+            buffer.reformatText(MARGIN, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+            updateCursor();
         }
-        **/
 
         // To get information about what keys the user is pressing, create an EventHandler.
         // EventHandler subclasses must override the "handle" function, which will be called
@@ -286,17 +312,13 @@ public class Editor extends Application {
         scene.setOnKeyTyped(keyEventHandler);
         scene.setOnKeyPressed(keyEventHandler);
         
+        //Make the cursor
         textRoot.getChildren().add(cursor);
         makeCursor();
+        
         primaryStage.setTitle("Text Editor");
         
-        // Register listeners that resize Allen when the window is re-sized.
-        // We're using some new syntax here to create a ChangeListener with an overridden
-        // changed() method; this is called instantiating an "anonymous class."  If you're curious
-        // to learn more about this syntax, try Googling "Java anonymous class".  Beware that
-        // IntelliJ sometimes collapses code blocks like this! If this happens, you can click on
-        // the "+" icon that's to the left of the code (and to the right of the line numbers) to
-        // expand the code again.
+        // Register listeners that resize the horizontal edge when the window is re-sized.
         scene.widthProperty().addListener(new ChangeListener<Number>() {
             @Override public void changed(
                     ObservableValue<? extends Number> observableValue,
@@ -307,6 +329,7 @@ public class Editor extends Application {
                 buffer.reformatText(5.0, 0.0, windowWidth, windowHeight);
             }
         });
+        /*
         scene.heightProperty().addListener(new ChangeListener<Number>() {
             @Override public void changed(
                     ObservableValue<? extends Number> observableValue,
@@ -316,6 +339,7 @@ public class Editor extends Application {
                 buffer.reformatText(5.0, 0.0, windowWidth, windowHeight);
             }
         });
+        **/
 
 
         // This is boilerplate, necessary to setup the window where things are displayed.
