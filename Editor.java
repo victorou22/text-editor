@@ -1,22 +1,18 @@
 package editor;
 
 import java.util.List;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
-import javafx.geometry.VPos;
 import javafx.scene.Group;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
-import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -29,56 +25,39 @@ import java.io.IOException;
 import java.util.Objects;
 
 /** 
-Text editor application
+Text Editor Application
 Written by Victor Ou
 */
     
 public class Editor extends Application {
-    private final Rectangle cursor;
-    private static final int STARTING_FONT_SIZE = 12;
-    private static int fontSize = STARTING_FONT_SIZE;
+    private Cursor cursor;
+    private static final int STARTING_WINDOW_WIDTH = 500;
+    private static final int STARTING_WINDOW_HEIGHT = 500;
+    private static final double STARTING_TEXT_POSITION_X = 5.0;
+    private static final double STARTING_TEXT_POSITION_Y = 0.0;
     private static final int MARGIN = 5;
-    private static double LINE_HEIGHT;
-    private static String fontName = "Verdana";
-    private static double currXPos = MARGIN;       //xPos of the cursor
-    private static double currYPos = 0.0;       //yPos of the cursor
     private static int windowWidth;
     private static int windowHeight;
     public Group root;
     public Group textRoot;
-    private FastLinkedList buffer;       //buffer used to store the characters input
+    private TextStorage buffer;       //buffer used to store the characters input
     private static String fileName;
 
     //* Constructor */
     public Editor() {
-        Text tempHeight = charToText(currXPos, currYPos, "a");
-        LINE_HEIGHT = tempHeight.getLayoutBounds().getHeight();
-        cursor = new Rectangle(currXPos, currYPos, 0.0, LINE_HEIGHT);
-        buffer = new FastLinkedList(LINE_HEIGHT);
+        buffer = new TextStorage(STARTING_TEXT_POSITION_X, STARTING_TEXT_POSITION_Y);
         
-        windowWidth = 500;
-        windowHeight = 500;
+        windowWidth = STARTING_WINDOW_WIDTH;
+        windowHeight = STARTING_WINDOW_HEIGHT;
+    }
+    
+    public static double getTextWidth(Text text) {
+        return Math.ceil(text.getLayoutBounds().getWidth());
     }
     
     /** An EventHandler to handle keys that get pressed. */
     private class KeyEventHandler implements EventHandler<KeyEvent> {
-        private static final double STARTING_TEXT_POSITION_X = 5.0;
-        private static final double STARTING_TEXT_POSITION_Y = 0.0;
-
-        /** The Text to display on the screen. */
-        private Text displayText = new Text(STARTING_TEXT_POSITION_X, STARTING_TEXT_POSITION_Y, "");
-
         KeyEventHandler(int windowWidth, int windowHeight) {
-            // Always set the text origin to be VPos.TOP! Setting the origin to be VPos.TOP means
-            // that when the text is assigned a y-position, that position corresponds to the
-            // highest position across all letters (for example, the top of a letter like "I", as
-            // opposed to the top of a letter like "e"), which makes calculating positions much
-            // simpler!
-            //displayText.setTextOrigin(VPos.TOP);
-            //displayText.setFont(Font.font(fontName, fontSize));
-
-            // All new Nodes need to be added to the root in order to be displayed.
-            //textRoot.getChildren().add(displayText);
         }
 
         @Override
@@ -89,27 +68,17 @@ public class Editor extends Application {
                 // capitalization.
                 String characterTyped = keyEvent.getCharacter();
                 if (Objects.equals(characterTyped, "\r")) {
-                    Text toBeAdded = charToText(currXPos, currYPos, "\n");
-                    currXPos = 5.0;
-                    currYPos += toBeAdded.getLayoutBounds().getHeight()/2;      //newlines are double height
-                    buffer.addChar(toBeAdded);
+                    buffer.addCharToTextStorage(cursor.getX(), cursor.getY(), "\n", textRoot);
                     keyEvent.consume();
-                    buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
-                    updateCursor();
-                    currXPos = MARGIN;
-                    currYPos += LINE_HEIGHT;
-                    cursor.setX(currXPos);
-                    cursor.setY(currYPos);
+                    buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    cursor.updateCursor("ENTER");
                 } else if (characterTyped.length() > 0 && characterTyped.charAt(0) != 8) {
                     // Ignore control keys, which have non-zero length, as well as the backspace
                     // key, which is represented as a character of value = 8 on Windows.
-                    Text toBeAdded = charToText(currXPos, currYPos, characterTyped);
-                    currXPos += getTextWidth(toBeAdded);        //increase the x position by the width
-                    buffer.addChar(toBeAdded);
-                    textRoot.getChildren().add(toBeAdded);
+                    buffer.addCharToTextStorage(cursor.getX(), cursor.getY(), characterTyped, textRoot);
                     keyEvent.consume();
-                    buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
-                    updateCursor();
+                    buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    cursor.updateCursor("AFTER");
                 }
             }
 
@@ -121,66 +90,33 @@ public class Editor extends Application {
                 if (keyEvent.isShortcutDown()) {
                     if (code == KeyCode.S) {
                         writeFile(fileName);
+                    } else if (code == KeyCode.EQUALS) {
+                        buffer.changeFontSize(4, cursor);
+                        buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                        cursor.updateCursor("AFTER");
+                    } else if (code == KeyCode.MINUS) {
+                        buffer.changeFontSize(-4, cursor);
+                        buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                        cursor.updateCursor("AFTER");
                     }
                 } else if (code == KeyCode.UP) {
-                    fontSize += 5;
-                    displayText.setFont(Font.font(fontName, fontSize));
-                    centerText();
+                    cursor.moveCursorUp();
                 } else if (code == KeyCode.DOWN) {
-                    fontSize = Math.max(0, fontSize - 5);
-                    displayText.setFont(Font.font(fontName, fontSize));
-                    centerText();
+                    cursor.moveCursorDown();
                 } else if (code == KeyCode.LEFT) {
-                    if(!buffer.isBeginning()) {
-                        if (buffer.isFirstCharOfLine() && cursor.getX() != MARGIN) {
-                            cursor.setX(MARGIN);
-                        } else {
-                            buffer.moveToPreviousNode();
-                            updateCursor();
-                        }
-                    }
-                } else if (code == KeyCode.RIGHT) { //need to implement end of text
-                    if(!buffer.isEnd()) {
-                        buffer.moveToNextNode();
-                        updateCursor();
-                    }
+                    cursor.moveCursorLeft();
+                } else if (code == KeyCode.RIGHT) {
+                    cursor.moveCursorRight();
                 } else if (code == KeyCode.BACK_SPACE) {
                     Text deleted = buffer.deleteChar();
-                    currXPos -= getTextWidth(deleted);
                     textRoot.getChildren().remove(deleted);
-                    buffer.reformatText(5.0, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
-                    updateCursor();
-                    //reflow
+                    buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    cursor.updateCursor("AFTER");
                 }
             }
         }
-
-        private void centerText() {
-            // Figure out the size of the current text.
-            double textHeight = displayText.getLayoutBounds().getHeight();
-            double textWidth = displayText.getLayoutBounds().getWidth();
-
-            // Calculate the position so that the text will be centered on the screen.
-            double textTop = 0;
-            double textLeft = 5;
-
-            // Re-position the text.
-            displayText.setX(textLeft);
-            displayText.setY(textTop);
-
-            // Make sure the text appears in front of any other objects you might add.
-            displayText.toFront();
-        }
     }
-    
-    private static Text charToText(double xPos, double yPos, String c) {                 //converts the char to Text and applies all necessary modifications
-        Text toBeAdded = new Text(xPos, yPos, c);
-        toBeAdded.setTextOrigin(VPos.TOP);
-        toBeAdded.setFont(Font.font(fontName, fontSize));
-        toBeAdded.toFront();
-        return toBeAdded;
-    }
-    
+        
     private static int maxMinusMargin(int max) {
         return max - MARGIN;
     }
@@ -215,10 +151,7 @@ public class Editor extends Application {
             while ((intRead = bufferedReader.read()) != -1) {
                 // The integer read can be cast to a char, because we're assuming ASCII.
                 char charRead = (char) intRead;
-                Text toBeAdded = charToText(currXPos, currYPos, String.valueOf(charRead));                      //set text                      
-                //currXPos += getTextWidth(toBeAdded);                  //increase the x position by the width 
-                buffer.addChar(toBeAdded);
-                textRoot.getChildren().add(toBeAdded);
+                buffer.addCharToTextStorage(0.0, 0.0, String.valueOf(charRead), textRoot); //the starting x and y do not matter because it will be reformatted                     
             }
             // Close the reader and writer.
             bufferedReader.close();
@@ -228,55 +161,6 @@ public class Editor extends Application {
             System.out.println("Error when copying; exception was: " + ioException);
         }
         return true;
-    }
-    
-    private double getTextWidth(Text text) {
-        return Math.ceil(text.getLayoutBounds().getWidth());
-    }
-    
-    /* Updates the position of the cursor **/
-    private void updateCursor() {
-        currXPos = buffer.getCurrTextX() + getTextWidth(buffer.getCurrText());
-        currYPos = buffer.getCurrTextY();        
-        cursor.setX(currXPos);
-        cursor.setY(currYPos);
-    }
-    
-    /** An EventHandler to handle changing blinking of the cursor. */
-    private class CursorBlinkEventHandler implements EventHandler<ActionEvent> {
-        private boolean isVisible = false;
-
-        CursorBlinkEventHandler() {
-            // Flip the width of the cursor to simulate blinking
-            changeWidth();
-        }
-
-        private void changeWidth() {
-            if (isVisible) {
-                cursor.setWidth(0.0);
-            } else {
-                cursor.setWidth(1.0);
-            }
-            isVisible = !isVisible;
-        }
-
-        @Override
-        public void handle(ActionEvent event) {
-            changeWidth();
-        }
-    }
-    
-    /* Makes the blinking cursor */
-    public void makeCursor() {
-        // Create a Timeline that will call the "handle" function of CursorBlinkEventHandler
-        // every 0.5 second.
-        final Timeline timeline = new Timeline();
-        // The rectangle should continue blinking forever.
-        timeline.setCycleCount(Timeline.INDEFINITE);
-        CursorBlinkEventHandler cursorChange = new CursorBlinkEventHandler();
-        KeyFrame keyFrame = new KeyFrame(Duration.millis(500), cursorChange);
-        timeline.getKeyFrames().add(keyFrame);
-        timeline.play();
     }
     
     @Override
@@ -289,6 +173,9 @@ public class Editor extends Application {
         // of the window displayed.
         Scene scene = new Scene(root, windowWidth, windowHeight, Color.WHITE);
         
+        //Create cursor
+        cursor = new Cursor(buffer, textRoot);
+        
         //Input text file
         List<String> inputs = getParameters().getRaw();
         if (inputs.isEmpty()) {
@@ -297,10 +184,10 @@ public class Editor extends Application {
         }
         fileName = inputs.get(0);
         
-        //Testing readFile
+        //if the file is read in successfully, reformat the text and update the cursor
         if (readFile(fileName)) {
-            buffer.reformatText(MARGIN, 0.0, maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
-            updateCursor();
+            buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+            cursor.updateCursor("AFTER");
         }
 
         // To get information about what keys the user is pressing, create an EventHandler.
@@ -312,10 +199,6 @@ public class Editor extends Application {
         scene.setOnKeyTyped(keyEventHandler);
         scene.setOnKeyPressed(keyEventHandler);
         
-        //Make the cursor
-        textRoot.getChildren().add(cursor);
-        makeCursor();
-        
         primaryStage.setTitle("Text Editor");
         
         // Register listeners that resize the horizontal edge when the window is re-sized.
@@ -326,21 +209,9 @@ public class Editor extends Application {
                     Number newScreenWidth) {
                 // Re-compute window width.
                 windowWidth = newScreenWidth.intValue();
-                buffer.reformatText(5.0, 0.0, windowWidth, windowHeight);
+                buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
             }
         });
-        /*
-        scene.heightProperty().addListener(new ChangeListener<Number>() {
-            @Override public void changed(
-                    ObservableValue<? extends Number> observableValue,
-                    Number oldScreenHeight,
-                    Number newScreenHeight) {
-                windowHeight = newScreenHeight.intValue();
-                buffer.reformatText(5.0, 0.0, windowWidth, windowHeight);
-            }
-        });
-        **/
-
 
         // This is boilerplate, necessary to setup the window where things are displayed.
         primaryStage.setScene(scene);
@@ -350,7 +221,5 @@ public class Editor extends Application {
     public static void main(String[] args) {
         launch(args);
         //testReadFile
-        
-        
     }
 }
