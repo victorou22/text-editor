@@ -78,6 +78,9 @@ public class Cursor {
                 cursor.setX(currText.getX() + Editor.getTextWidth(currText));
                 cursor.setY(currText.getY());
                 break;
+            case "BEFORE":
+                cursor.setX(currText.getX());
+                cursor.setY(currText.getY());
         }
     }
     
@@ -119,8 +122,16 @@ public class Cursor {
     
     public void moveCursorRight() {
         if(!buffer.isEnd()) {
-            buffer.moveToNextNode();
-            this.updateCursor("AFTER");
+            if (cursor.getX() == STARTING_CURSOR_X && !buffer.isNewline()) {
+                cursor.setX(STARTING_CURSOR_X + Editor.getTextWidth(buffer.getCurrText()));
+            } else {
+                buffer.moveToNextNode();
+                if (buffer.isFirstCharOfLine()) {
+                    this.updateCursor("BEFORE");
+                } else {
+                    this.updateCursor("AFTER");
+                }
+            }
         }
     }
 }

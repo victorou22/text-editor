@@ -52,7 +52,7 @@ public class TextStorage {
         return currentNode.t;
     }
     
-    public void addChar(Text text) {   //adds c to the end of the list with coordinates x and y
+    private void addChar(Text text) {   //adds c to the end of the list with coordinates x and y
         Node n = new Node();
         n.t = text;
         n.prev = currentNode;
@@ -66,31 +66,43 @@ public class TextStorage {
         return lineNumbers.containsValue(currentNode);
     }
     
-    public void moveToPreviousNode() {
-        Node runner = currentNode.prev;
-        while (runner.t.getText().equals("\n")) {
-            runner = runner.prev;
-        }
-        currentNode = runner;
+    private boolean isFirstCharOfLine(Node node) {
+        return lineNumbers.containsValue(node);
     }
     
-    public void moveToNextNode() {
-        Node runner = currentNode.next;
-        while (runner.t.getText().equals("\n")) {
-            runner = runner.next;
+    public void moveToPreviousNode() {  //if there is a newline before on the previous line, skip it
+        if (currentNode.prev.t.getText() == "\n" && !this.isFirstCharOfLine(currentNode.prev)) {
+            currentNode = currentNode.prev.prev;
+        } else {    
+            currentNode = currentNode.prev;
         }
-        currentNode = runner;
+    }
+    
+    public void moveToNextNode() {  //if there is a newline next on the same line, skip it
+        if (currentNode.next.t.getText() == "\n" && !this.isFirstCharOfLine(currentNode.next)) {
+            currentNode = currentNode.next.next;
+        } else {
+            currentNode = currentNode.next;
+        }
+    }
+    
+    public void moveToLastNode() {
+        currentNode = sentinel.prev;
+    }
+    
+    public boolean isNewline() {
+        return currentNode.t.getText() == "\n";
     }
     
     public boolean moveToClosestNode(double xPos, double yPos) {
-        //returns Node closest to input coordinates or null invalid
+        //returns Node closest to input coordinates or null if invalid coordinates or position is after the last line possible
         int lineNum = calcLineNumber(yPos);
         Node nodeInLine = lineNumbers.get(lineNum);
         if (nodeInLine == null) {
             return false;
         } else {
             while (nodeInLine.t.getX() + Editor.getTextWidth(nodeInLine.t) < xPos) {
-                if ((nodeInLine.next == sentinel) || (nodeInLine.next.t.getY() != yPos) || (nodeInLine.next.t.getText().equals("\n"))) {
+                if ((nodeInLine.t.getText().equals("\n")) || (nodeInLine.next == sentinel) || (nodeInLine.next.t.getText().equals("\n"))) {
                     break;
                 }
                 nodeInLine = nodeInLine.next;
@@ -100,7 +112,7 @@ public class TextStorage {
         return true;
     }
     
-    public Text deleteChar() {                              //deletes the current Node
+    private Text deleteChar() {                              //deletes the current Node
         Text ret = currentNode.t;
         currentNode.prev.next = currentNode.next;
         currentNode.next.prev = currentNode.prev;
@@ -114,6 +126,15 @@ public class TextStorage {
         if (!c.equals("\n")) {
             root.getChildren().add(toBeAdded);
         }
+    }
+    
+    public void deleteCharFromTextStorage(Group root) {
+        Text deleted = this.deleteChar();
+        root.getChildren().remove(deleted);
+    }
+    
+    public boolean leftOfCurrText(double xPos) {
+        return (currentNode.t.getX() + 0.5*Editor.getTextWidth(currentNode.t) > xPos);
     }
     
     public static Text charToText(double xPos, double yPos, String c) {                 //converts the char to Text and applies all necessary modifications
@@ -153,16 +174,11 @@ public class TextStorage {
         double currY = STARTING_TEXT_POSITION_Y;
         while (runner != sentinel) {
             Text text = runner.t;
-            if (Objects.equals(text.getText(), "\n")) { //if the node is a newline
-                currX = STARTING_TEXT_POSITION_X;
-                currY += LINE_HEIGHT;
-                isStartNextLine = true;
-            } else {
-                /* keep track of the words between spaces **/
-                if (Objects.equals(text.getText(), " ")) {
-                    prevSpace = runner;
-                }
-                /* if reach end of line, newline **/
+            /* keep track of the words between spaces **/
+            if (Objects.equals(text.getText(), " ")) {
+                prevSpace = runner;
+            }
+            /* if reach end of line, newline **/
                 if (currX + Editor.getTextWidth(text) >= xMax) { //if the next char would exceed the margin
                     /* if there had a been a space earlier and the right edge is reached, wrap the text starting from that earlier space **/
                     if (runner.t.getText().equals(" ")) {
@@ -179,7 +195,8 @@ public class TextStorage {
                     currY += LINE_HEIGHT;
                     isStartNextLine = true;
                 }
-                if (isStartNextLine) {
+                
+                if (isStartNextLine && currX == STARTING_TEXT_POSITION_X) {
                     lineNumbers.put(calcLineNumber(currY), runner);
                     isStartNextLine = false;
                     prevSpace = null;   //there aren't any spaces in this new line yet
@@ -187,10 +204,14 @@ public class TextStorage {
                 text.setX(currX);
                 text.setY(currY);
                 currX += Editor.getTextWidth(text);
+                if (Objects.equals(text.getText(), "\n")) { //if the node is a newline
+                    currX = STARTING_TEXT_POSITION_X;
+                    currY += LINE_HEIGHT;
+                    isStartNextLine = true;
+                }
+                runner = runner.next;
             }
-            runner = runner.next;
         }
-    }
     
     public void writeFile(String outputFileName) {
         if (sentinel.next == sentinel) {

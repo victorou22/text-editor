@@ -14,6 +14,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
+import javafx.scene.input.MouseEvent;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import java.io.BufferedReader;
@@ -53,6 +54,31 @@ public class Editor extends Application {
     
     public static double getTextWidth(Text text) {
         return Math.ceil(text.getLayoutBounds().getWidth());
+    }
+    
+    /** An event handler that displays the current position of the mouse whenever it is clicked. */
+    private class MouseClickEventHandler implements EventHandler<MouseEvent> {
+
+        MouseClickEventHandler(Group root) {
+        }
+
+
+        @Override
+        public void handle(MouseEvent mouseEvent) {            
+            double mousePressedX = mouseEvent.getX();
+            double mousePressedY = mouseEvent.getY();
+
+            if (buffer.moveToClosestNode(mousePressedX, mousePressedY)) {
+                if (buffer.leftOfCurrText(mousePressedX)) {
+                    cursor.updateCursor("BEFORE");
+                } else {
+                    cursor.updateCursor("AFTER");
+                }
+            } else {
+                buffer.moveToLastNode();
+                cursor.updateCursor("AFTER");
+            } 
+        }
     }
     
     /** An EventHandler to handle keys that get pressed. */
@@ -108,8 +134,7 @@ public class Editor extends Application {
                 } else if (code == KeyCode.RIGHT) {
                     cursor.moveCursorRight();
                 } else if (code == KeyCode.BACK_SPACE) {
-                    Text deleted = buffer.deleteChar();
-                    textRoot.getChildren().remove(deleted);
+                    buffer.deleteCharFromTextStorage(textRoot);
                     buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
                     cursor.updateCursor("AFTER");
                 }
@@ -198,6 +223,8 @@ public class Editor extends Application {
         // Register the event handler to be called for all KEY_PRESSED and KEY_TYPED events.
         scene.setOnKeyTyped(keyEventHandler);
         scene.setOnKeyPressed(keyEventHandler);
+        
+        scene.setOnMouseClicked(new MouseClickEventHandler(root));
         
         primaryStage.setTitle("Text Editor");
         
