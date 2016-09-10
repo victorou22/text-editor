@@ -52,6 +52,10 @@ public class TextStorage {
         return currentNode.t;
     }
     
+    public double totalHeightOfLines() {
+        return Math.ceil(LINE_HEIGHT*(lineNumbers.size()));
+    }
+    
     private void addChar(Text text) {   //adds c to the end of the list with coordinates x and y
         Node n = new Node();
         n.t = text;
@@ -71,7 +75,7 @@ public class TextStorage {
     }
     
     public void moveToPreviousNode() {  //if there is a newline before on the previous line, skip it
-        if (currentNode.prev.t.getText() == "\n" && !this.isFirstCharOfLine(currentNode.prev)) {
+        if (currentNode.prev.t.getText().equals("\n") && !this.isFirstCharOfLine(currentNode.prev)) {
             currentNode = currentNode.prev.prev;
         } else {    
             currentNode = currentNode.prev;
@@ -79,7 +83,7 @@ public class TextStorage {
     }
     
     public void moveToNextNode() {  //if there is a newline next on the same line, skip it
-        if (currentNode.next.t.getText() == "\n" && !this.isFirstCharOfLine(currentNode.next)) {
+        if (currentNode.next.t.getText().equals("\n") && !this.isFirstCharOfLine(currentNode.next)) {
             currentNode = currentNode.next.next;
         } else {
             currentNode = currentNode.next;
@@ -91,12 +95,12 @@ public class TextStorage {
     }
     
     public boolean isNewline() {
-        return currentNode.t.getText() == "\n";
+        return currentNode.t.getText().equals("\n");
     }
     
-    public boolean moveToClosestNode(double xPos, double yPos) {
+    public boolean moveToClosestNode(double xPos, double yPos, int scrollOffset) {
         //returns Node closest to input coordinates or null if invalid coordinates or position is after the last line possible
-        int lineNum = calcLineNumber(yPos);
+        int lineNum = calcLineNumber(yPos + scrollOffset);
         Node nodeInLine = lineNumbers.get(lineNum);
         if (nodeInLine == null) {
             return false;

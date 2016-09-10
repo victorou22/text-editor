@@ -7,6 +7,7 @@ import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
+import javafx.geometry.Orientation;
 import javafx.scene.Group;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
@@ -15,6 +16,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.control.ScrollBar;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import java.io.BufferedReader;
@@ -32,13 +34,15 @@ Written by Victor Ou
     
 public class Editor extends Application {
     private Cursor cursor;
+    private ScrollBar scrollBar;
     private static final int STARTING_WINDOW_WIDTH = 500;
     private static final int STARTING_WINDOW_HEIGHT = 500;
     private static final double STARTING_TEXT_POSITION_X = 5.0;
     private static final double STARTING_TEXT_POSITION_Y = 0.0;
-    private static final int MARGIN = 5;
+    private static int MARGIN = 5;
     private static int windowWidth;
     private static int windowHeight;
+    private static int scrollOffset = 0;
     public Group root;
     public Group textRoot;
     private TextStorage buffer;       //buffer used to store the characters input
@@ -62,13 +66,12 @@ public class Editor extends Application {
         MouseClickEventHandler(Group root) {
         }
 
-
         @Override
         public void handle(MouseEvent mouseEvent) {            
             double mousePressedX = mouseEvent.getX();
             double mousePressedY = mouseEvent.getY();
 
-            if (buffer.moveToClosestNode(mousePressedX, mousePressedY)) {
+            if (buffer.moveToClosestNode(mousePressedX, mousePressedY, scrollOffset)) {
                 if (buffer.leftOfCurrText(mousePressedX)) {
                     cursor.updateCursor("BEFORE");
                 } else {
@@ -96,15 +99,19 @@ public class Editor extends Application {
                 if (Objects.equals(characterTyped, "\r")) {
                     buffer.addCharToTextStorage(cursor.getX(), cursor.getY(), "\n", textRoot);
                     keyEvent.consume();
-                    buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                     cursor.updateCursor("ENTER");
+                    checkSnapback();
+                    scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
                 } else if (characterTyped.length() > 0 && characterTyped.charAt(0) != 8) {
                     // Ignore control keys, which have non-zero length, as well as the backspace
                     // key, which is represented as a character of value = 8 on Windows.
                     buffer.addCharToTextStorage(cursor.getX(), cursor.getY(), characterTyped, textRoot);
                     keyEvent.consume();
-                    buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                     cursor.updateCursor("AFTER");
+                    checkSnapback();
+                    scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
                 }
             }
 
@@ -118,28 +125,43 @@ public class Editor extends Application {
                         writeFile(fileName);
                     } else if (code == KeyCode.EQUALS) {
                         buffer.changeFontSize(4, cursor);
-                        buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                        buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                         cursor.updateCursor("AFTER");
                     } else if (code == KeyCode.MINUS) {
                         buffer.changeFontSize(-4, cursor);
-                        buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                        buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                         cursor.updateCursor("AFTER");
                     }
                 } else if (code == KeyCode.UP) {
-                    cursor.moveCursorUp();
+                    cursor.moveCursorUp(scrollOffset);
+                    checkSnapback();
                 } else if (code == KeyCode.DOWN) {
-                    cursor.moveCursorDown();
+                    cursor.moveCursorDown(scrollOffset);
+                    checkSnapback();
                 } else if (code == KeyCode.LEFT) {
                     cursor.moveCursorLeft();
+                    checkSnapback();
                 } else if (code == KeyCode.RIGHT) {
                     cursor.moveCursorRight();
+                    checkSnapback();
                 } else if (code == KeyCode.BACK_SPACE) {
                     buffer.deleteCharFromTextStorage(textRoot);
-                    buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                    buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                     cursor.updateCursor("AFTER");
                 }
             }
         }
+    }
+    
+    private void checkSnapback() {
+        if (cursor.isCursorOutOfScreenAbove(scrollOffset)) {
+                scrollBar.setValue(cursor.getY());
+            } else if (cursor.isCursorOutOfScreenBelow(scrollOffset, windowHeight)) {
+                int offset = (int) (Math.round(cursor.getY()) - windowHeight) + (int) Math.round(cursor.lineHeight());
+                scrollBar.setValue(offset);
+            } else {
+                return;
+            }
     }
         
     private static int maxMinusMargin(int max) {
@@ -201,6 +223,26 @@ public class Editor extends Application {
         //Create cursor
         cursor = new Cursor(buffer, textRoot);
         
+        /** Scroll bar */
+        scrollBar = new ScrollBar();
+        scrollBar.setOrientation(Orientation.VERTICAL);
+        scrollBar.setPrefHeight(windowHeight);        
+        root.getChildren().add(scrollBar); 
+        
+        scrollBar.valueProperty().addListener(new ChangeListener<Number>() {
+            public void changed(
+                ObservableValue<? extends Number> observableValue,
+                Number oldValue,
+                Number newValue) {
+                scrollOffset = newValue.intValue();
+                textRoot.setLayoutY(-1*scrollOffset);
+            }
+        });
+        
+        int usableScreenWidth = windowWidth - (int) scrollBar.getLayoutBounds().getWidth();
+        MARGIN = windowWidth - usableScreenWidth;
+        scrollBar.setLayoutX(usableScreenWidth);
+        
         //Input text file
         List<String> inputs = getParameters().getRaw();
         if (inputs.isEmpty()) {
@@ -211,9 +253,12 @@ public class Editor extends Application {
         
         //if the file is read in successfully, reformat the text and update the cursor
         if (readFile(fileName)) {
-            buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+            buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
             cursor.updateCursor("AFTER");
         }
+        
+        scrollBar.setMin(0);
+        scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
 
         // To get information about what keys the user is pressing, create an EventHandler.
         // EventHandler subclasses must override the "handle" function, which will be called
@@ -224,7 +269,7 @@ public class Editor extends Application {
         scene.setOnKeyTyped(keyEventHandler);
         scene.setOnKeyPressed(keyEventHandler);
         
-        scene.setOnMouseClicked(new MouseClickEventHandler(root));
+        scene.setOnMouseClicked(new MouseClickEventHandler(root));        
         
         primaryStage.setTitle("Text Editor");
         
@@ -236,7 +281,19 @@ public class Editor extends Application {
                     Number newScreenWidth) {
                 // Re-compute window width.
                 windowWidth = newScreenWidth.intValue();
-                buffer.reformatText(maxMinusMargin(windowWidth), maxMinusMargin(windowHeight));
+                buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
+                int usableScreenWidth = windowWidth - (int) scrollBar.getLayoutBounds().getWidth();
+                scrollBar.setLayoutX(usableScreenWidth);
+            }
+        });
+        scene.heightProperty().addListener(new ChangeListener<Number>() {
+            @Override public void changed(
+                    ObservableValue<? extends Number> observableValue,
+                    Number oldScreenHeight,
+                    Number newScreenHeight) {
+                windowHeight = newScreenHeight.intValue();
+                scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
+                scrollBar.setPrefHeight(windowHeight);
             }
         });
 

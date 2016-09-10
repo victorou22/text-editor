@@ -28,6 +28,10 @@ public class Cursor {
         root.getChildren().add(cursor);
     }
     
+    public double lineHeight() {
+        return LINE_HEIGHT;
+    }
+    
     /** An EventHandler to handle changing blinking of the cursor. */
     private class CursorBlinkEventHandler implements EventHandler<ActionEvent> {
         private boolean isVisible = false;
@@ -97,14 +101,22 @@ public class Cursor {
         return cursor.getY();
     }
     
-    public void moveCursorUp() {
-        if(buffer.moveToClosestNode(cursor.getX(), cursor.getY() - LINE_HEIGHT)) {                        
+    public boolean isCursorOutOfScreenAbove(int scrollOffset) {
+        return (scrollOffset - cursor.getY() > 0);
+    }
+    
+    public boolean isCursorOutOfScreenBelow(int scrollOffset, int windowHeight) {
+        return (cursor.getY() > scrollOffset + (double) windowHeight);
+    }
+    
+    public void moveCursorUp(int scrollOffset) {
+        if(buffer.moveToClosestNode(cursor.getX(), cursor.getY() - LINE_HEIGHT - scrollOffset, scrollOffset)) {                        
             this.updateCursor("AFTER");
         }
     }
     
-    public void moveCursorDown() {
-        if(buffer.moveToClosestNode(cursor.getX(), cursor.getY() + LINE_HEIGHT)) {
+    public void moveCursorDown(int scrollOffset) {
+        if(buffer.moveToClosestNode(cursor.getX(), cursor.getY() + LINE_HEIGHT - scrollOffset, scrollOffset)) {
             this.updateCursor("AFTER");
         }
     }
