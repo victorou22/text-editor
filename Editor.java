@@ -23,13 +23,34 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Objects;
 
-/** 
-Text Editor Application
-Written by Victor Ou
+/**
+* Text Editor Application
+* @author Victor Ou
+*
+*Created according to the approximate specifications of 
+* http://datastructur.es/sp16/materials/proj/proj2/proj2.html
+*
+* (Compile using a *.txt file name as the first command line argument. 
+* If the file exists, it will be opened. If not, a blank document will be created.)
+*
+* A basic text editor that supports the following features:
+* -Current position is denoted with a flashing cursor
+* -Word wrap
+* -Newlines
+* -Backspace (Not delete though)
+* -Open a file
+*    The file name of the file to be opened should be given as the first command line argument. (mandatory)
+* -Save a file (Ctrl/Cmd+S)
+*     The file is written to the name of first command line argument.
+* -Arrow keys for navigation
+* -Mouse input (clicking moves the cursor as you would expect)
+* -Window re-sizing
+* -Vertical scrolling using scroll bar
+* -Undo and redo (Ctrl/Cmd+Z and Ctrl/Cmd+Y)
+* -Changing the font size by 4 points (Ctrl/Cmd+PLUS and Ctrl/Cmd+MINUS)
 */
     
 public class Editor extends Application {
@@ -42,10 +63,10 @@ public class Editor extends Application {
     private static int MARGIN = 5;
     private static int windowWidth;
     private static int windowHeight;
-    private static int scrollOffset = 0;
+    private static int scrollOffset = 0;    //offset for the scroll bar
     public Group root;
     public Group textRoot;
-    private TextStorage buffer;       //buffer used to store the characters input
+    private TextStorage buffer;             //datastructure used to store the characters input
     private static String fileName;
 
     //* Constructor */
@@ -57,14 +78,19 @@ public class Editor extends Application {
     }
     
     public static double getTextWidth(Text text) {
+        /** Calculates the width of Test objects */
         return Math.ceil(text.getLayoutBounds().getWidth());
     }
     
-    /** An event handler that displays the current position of the mouse whenever it is clicked. */
+    private static int maxMinusMargin(int max) {
+        /** Calculates the usable window width after subtracting the margin */
+        return max - MARGIN;
+    }
+    
+    /** An event handler that moves to cursor to wherever the mouse is clicked. */
     private class MouseClickEventHandler implements EventHandler<MouseEvent> {
-
-        MouseClickEventHandler(Group root) {
-        }
+        
+        MouseClickEventHandler (Group root) {}
 
         @Override
         public void handle(MouseEvent mouseEvent) {            
@@ -86,8 +112,8 @@ public class Editor extends Application {
     
     /** An EventHandler to handle keys that get pressed. */
     private class KeyEventHandler implements EventHandler<KeyEvent> {
-        KeyEventHandler(int windowWidth, int windowHeight) {
-        }
+        
+        KeyEventHandler (int windowWidth, int windowHeight) {}
 
         @Override
         public void handle(KeyEvent keyEvent) {
@@ -96,14 +122,16 @@ public class Editor extends Application {
                 // the KEY_TYPED event, javafx handles the "Shift" key and associated
                 // capitalization.
                 String characterTyped = keyEvent.getCharacter();
-                if (Objects.equals(characterTyped, "\r")) {
+                if (Objects.equals(characterTyped, "\r")) {     //special handling for newlines
                     buffer.addCharToTextStorage(cursor.getX(), cursor.getY(), "\n", textRoot);
                     keyEvent.consume();
                     buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                     cursor.updateCursor("ENTER");
                     checkSnapback();
                     scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
+                    buffer.clearRedo();
                 } else if (characterTyped.length() > 0 && characterTyped.charAt(0) != 8) {
+                    // Processing regular keypresses (letters, symbols, etc)
                     // Ignore control keys, which have non-zero length, as well as the backspace
                     // key, which is represented as a character of value = 8 on Windows.
                     buffer.addCharToTextStorage(cursor.getX(), cursor.getY(), characterTyped, textRoot);
@@ -112,6 +140,7 @@ public class Editor extends Application {
                     cursor.updateCursor("AFTER");
                     checkSnapback();
                     scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
+                    buffer.clearRedo();
                 }
             }
 
@@ -120,7 +149,7 @@ public class Editor extends Application {
                 // events have a code that we can check (KEY_TYPED events don't have an associated
                 // KeyCode).
                 KeyCode code = keyEvent.getCode();
-                if (keyEvent.isShortcutDown()) {
+                if (keyEvent.isShortcutDown()) {        //processing ctrl/cmd keypresses
                     if (code == KeyCode.S) {
                         writeFile(fileName);
                     } else if (code == KeyCode.EQUALS) {
@@ -129,6 +158,14 @@ public class Editor extends Application {
                         cursor.updateCursor("AFTER");
                     } else if (code == KeyCode.MINUS) {
                         buffer.changeFontSize(-4, cursor);
+                        buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
+                        cursor.updateCursor("AFTER");
+                    } else if (code == KeyCode.Z) {
+                        buffer.undoAction(textRoot);
+                        buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
+                        cursor.updateCursor("AFTER");
+                    } else if (code == KeyCode.Y) {
+                        buffer.redoAction(textRoot);
                         buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                         cursor.updateCursor("AFTER");
                     }
@@ -148,24 +185,21 @@ public class Editor extends Application {
                     buffer.deleteCharFromTextStorage(textRoot);
                     buffer.reformatText(maxMinusMargin(windowWidth), windowHeight);
                     cursor.updateCursor("AFTER");
+                    buffer.clearRedo();
                 }
             }
         }
     }
     
     private void checkSnapback() {
+        /* Check after a key press if the cursor is out of screen.
+         * If so, jump to the cursor */
         if (cursor.isCursorOutOfScreenAbove(scrollOffset)) {
-                scrollBar.setValue(cursor.getY());
-            } else if (cursor.isCursorOutOfScreenBelow(scrollOffset, windowHeight)) {
-                int offset = (int) (Math.round(cursor.getY()) - windowHeight) + (int) Math.round(cursor.lineHeight());
-                scrollBar.setValue(offset);
-            } else {
-                return;
-            }
-    }
-        
-    private static int maxMinusMargin(int max) {
-        return max - MARGIN;
+            scrollBar.setValue(cursor.getY());
+        } else if (cursor.isCursorOutOfScreenBelow(scrollOffset, windowHeight)) {
+            int offset = (int) (Math.round(cursor.getY()) - windowHeight) + (int) Math.round(cursor.lineHeight());
+            scrollBar.setValue(offset);
+        }
     }
     
     private void writeFile(String outputFileName) {       
@@ -184,23 +218,18 @@ public class Editor extends Application {
                 return false;
             }
             FileReader reader = new FileReader(inputFile);
-            // It's good practice to read files using a buffered reader.  A buffered reader reads
-            // big chunks of the file from the disk, and then buffers them in memory.  Otherwise,
-            // if you read one character at a time from the file using FileReader, each character
-            // read causes a separate read from disk.  You'll learn more about this if you take more
-            // CS classes, but for now, take our word for it!
+
             BufferedReader bufferedReader = new BufferedReader(reader);
 
             int intRead = -1;
-            // Keep reading from the file input until read() returns -1, which means the end of the file
-            // was reached.
+            // Keep reading from the file input until read() returns -1, which means the end of the file was reached.
             
             while ((intRead = bufferedReader.read()) != -1) {
                 // The integer read can be cast to a char, because we're assuming ASCII.
                 char charRead = (char) intRead;
                 buffer.addCharToTextStorage(0.0, 0.0, String.valueOf(charRead), textRoot); //the starting x and y do not matter because it will be reformatted                     
             }
-            // Close the reader and writer.
+
             bufferedReader.close();
         } catch (FileNotFoundException fileNotFoundException) {
             System.out.println("File not found! Exception was: " + fileNotFoundException);
@@ -223,12 +252,13 @@ public class Editor extends Application {
         //Create cursor
         cursor = new Cursor(buffer, textRoot);
         
-        /** Scroll bar */
+        //Create scroll bar
         scrollBar = new ScrollBar();
         scrollBar.setOrientation(Orientation.VERTICAL);
         scrollBar.setPrefHeight(windowHeight);        
         root.getChildren().add(scrollBar); 
         
+        //ChangeListener for scroll bar
         scrollBar.valueProperty().addListener(new ChangeListener<Number>() {
             public void changed(
                 ObservableValue<? extends Number> observableValue,
@@ -246,7 +276,7 @@ public class Editor extends Application {
         //Input text file
         List<String> inputs = getParameters().getRaw();
         if (inputs.isEmpty()) {
-            System.out.println("Expected usage: editor.Editor <source filename>");
+            System.out.println("Expected usage: java editor.Editor <source filename> where <source filename> is in the form of *.txt");
             System.exit(1);
         }
         fileName = inputs.get(0);
@@ -260,9 +290,6 @@ public class Editor extends Application {
         scrollBar.setMin(0);
         scrollBar.setMax(buffer.totalHeightOfLines() - windowHeight);
 
-        // To get information about what keys the user is pressing, create an EventHandler.
-        // EventHandler subclasses must override the "handle" function, which will be called
-        // by javafx.
         EventHandler<KeyEvent> keyEventHandler =
                 new KeyEventHandler(windowWidth, windowHeight);
         // Register the event handler to be called for all KEY_PRESSED and KEY_TYPED events.
@@ -273,7 +300,7 @@ public class Editor extends Application {
         
         primaryStage.setTitle("Text Editor");
         
-        // Register listeners that resize the horizontal edge when the window is re-sized.
+        // ChangeListeners for window re-sizing
         scene.widthProperty().addListener(new ChangeListener<Number>() {
             @Override public void changed(
                     ObservableValue<? extends Number> observableValue,
@@ -304,6 +331,5 @@ public class Editor extends Application {
 
     public static void main(String[] args) {
         launch(args);
-        //testReadFile
     }
 }

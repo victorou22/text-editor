@@ -8,9 +8,11 @@ import javafx.geometry.VPos;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.ArrayDeque;
 
-/**TextStorage is a LinkedList data structure meant for use for Nodes of Text Objects. A HashMap is used for quick access to the lines of text
-*/
+/** TextStorage is a LinkedList data structure meant for storage of 
+* Text Objects. A HashMap is used for quick access to the lines of text.
+* A stack is used for the implementation of undo and redo. */
 public class TextStorage {
     private class Node {
         Text t = new Text(5.0, 0.0, "");
@@ -18,17 +20,33 @@ public class TextStorage {
         Node next;
     }
     
+    private class TextEvent {   //Text input/deletion information stored for undo/redo operations
+        Text text;
+        Node nodeOfLastEvent;
+        String action;
+        
+        public TextEvent(Text t, Node n, String s) {
+            text = t;
+            nodeOfLastEvent = n;
+            action = s;
+        }
+    }
+    
     private Node sentinel;
     private Node currentNode;   //points to the current Node where the cursor is
-    private HashMap<Integer, Node> lineNumbers;
+    private HashMap<Integer, Node> lineNumbers; //HashMap that stores the first Node of each line for fast cursor access
     private static double LINE_HEIGHT;
     private static double STARTING_TEXT_POSITION_X;
     private static double STARTING_TEXT_POSITION_Y;
     private static final int STARTING_FONT_SIZE = 12;
     private static int fontSize = STARTING_FONT_SIZE;
     private static String fontName = "Verdana";
+    private static ArrayDeque<TextEvent> undo;
+    private static ArrayDeque<TextEvent> redo;
+    private static boolean undoing = false;
     
-    public TextStorage(double startingX, double startingY) {  //constructor
+    /** Constructor */
+    public TextStorage(double startingX, double startingY) {
         sentinel = new Node();
         currentNode = sentinel;
         sentinel.prev = sentinel;
@@ -38,6 +56,8 @@ public class TextStorage {
         STARTING_TEXT_POSITION_X = startingX;
         STARTING_TEXT_POSITION_Y = startingY;
         lineNumbers = new HashMap<Integer, Node>();
+        undo = new ArrayDeque<TextEvent>(100);
+        redo = new ArrayDeque<TextEvent>(100);
     }
     
     public boolean isBeginning() {
@@ -56,7 +76,8 @@ public class TextStorage {
         return Math.ceil(LINE_HEIGHT*(lineNumbers.size()));
     }
     
-    private void addChar(Text text) {   //adds c to the end of the list with coordinates x and y
+    private void addChar(Text text) {   
+        /* Adds Text to the end of the list. Undo information is stored. */
         Node n = new Node();
         n.t = text;
         n.prev = currentNode;
@@ -64,6 +85,13 @@ public class TextStorage {
         currentNode.next.prev = n;
         currentNode.next = n;
         currentNode = n;
+        
+        if (!undoing) {
+            if (undo.size() == 100) {
+                undo.removeLast();
+            }
+            undo.push(new TextEvent(text, currentNode, "ADD"));
+        }
     }
     
     public boolean isFirstCharOfLine() {
@@ -74,7 +102,8 @@ public class TextStorage {
         return lineNumbers.containsValue(node);
     }
     
-    public void moveToPreviousNode() {  //if there is a newline before on the previous line, skip it
+    public void moveToPreviousNode() {  
+        /* If there is a newline before on the previous line, skip it */
         if (currentNode.prev.t.getText().equals("\n") && !this.isFirstCharOfLine(currentNode.prev)) {
             currentNode = currentNode.prev.prev;
         } else {    
@@ -82,7 +111,8 @@ public class TextStorage {
         }
     }
     
-    public void moveToNextNode() {  //if there is a newline next on the same line, skip it
+    public void moveToNextNode() {  
+        /* If there is a newline next on the same line, skip it */
         if (currentNode.next.t.getText().equals("\n") && !this.isFirstCharOfLine(currentNode.next)) {
             currentNode = currentNode.next.next;
         } else {
@@ -99,7 +129,7 @@ public class TextStorage {
     }
     
     public boolean moveToClosestNode(double xPos, double yPos, int scrollOffset) {
-        //returns Node closest to input coordinates or null if invalid coordinates or position is after the last line possible
+        /* Returns Node closest to input coordinates or null if invalid coordinates or position is after the last line possible */
         int lineNum = calcLineNumber(yPos + scrollOffset);
         Node nodeInLine = lineNumbers.get(lineNum);
         if (nodeInLine == null) {
@@ -116,8 +146,15 @@ public class TextStorage {
         return true;
     }
     
-    private Text deleteChar() {                              //deletes the current Node
+    private Text deleteChar() {
         Text ret = currentNode.t;
+        if (!undoing) {
+            if (undo.size() == 100) {
+                undo.removeLast();
+            }
+            undo.push(new TextEvent(currentNode.t, currentNode.prev, "DELETE"));
+        }
+        
         currentNode.prev.next = currentNode.next;
         currentNode.next.prev = currentNode.prev;
         currentNode = currentNode.prev;
@@ -141,7 +178,8 @@ public class TextStorage {
         return (currentNode.t.getX() + 0.5*Editor.getTextWidth(currentNode.t) > xPos);
     }
     
-    public static Text charToText(double xPos, double yPos, String c) {                 //converts the char to Text and applies all necessary modifications
+    public static Text charToText(double xPos, double yPos, String c) {
+        /* Converts the char to Text and applies all necessary modifications */
             Text toBeAdded = new Text(xPos, yPos, c);
             toBeAdded.setTextOrigin(VPos.TOP);
             toBeAdded.setFont(Font.font(fontName, fontSize));
@@ -149,10 +187,11 @@ public class TextStorage {
             return toBeAdded;
         }
     
-    public void changeFontSize(int increment, Cursor cursor) {  //could have optimized by implementing in reformatText, but using two loops for simplicity
+    public void changeFontSize(int increment, Cursor cursor) {
+        /* Could have optimized by implementing in reformatText, but using two loops for simplicity */
         if (increment >= 0) {
             fontSize += increment;
-        } else {    //if negative increment, cannot go below zero
+        } else {    //If negative increment, cannot go below zero
             fontSize = Math.max(0, fontSize + increment);
         }
         Text tempHeight = charToText(0, 0, "a");
@@ -169,8 +208,51 @@ public class TextStorage {
         return (int) (y/LINE_HEIGHT);
     }
     
-    public void reformatText(double xMax, double yMax) {            //recalculates all of the text positions and textwraps. xMax and yMax are the window limits
-        Node prevSpace = null;  //has there been a space on this line
+    public void undoAction(Group root) {
+        if (!undo.isEmpty()) {
+            undoing = true;
+            TextEvent event = undo.pop();
+            redo.push(event);
+            currentNode = event.nodeOfLastEvent;
+            if (event.action.equals("ADD")) {
+                this.deleteCharFromTextStorage(root);
+            } else if (event.action.equals("DELETE")) {
+                Text toBeAdded = event.text;
+                this.addChar(toBeAdded);
+                if (!toBeAdded.getText().equals("\n")) {
+                    root.getChildren().add(toBeAdded);
+                }
+            }
+        }
+        undoing = false;
+    }
+    
+    public void clearRedo() {
+        redo.clear();
+    }
+    
+    public void redoAction(Group root) {
+        if (!redo.isEmpty()) {
+            undoing = true;
+            TextEvent event = redo.pop();
+            undo.push(event);
+            if (event.action.equals("ADD")) {
+                Text toBeAdded = event.text;
+                this.addChar(toBeAdded);
+                if (!toBeAdded.getText().equals("\n")) {
+                    root.getChildren().add(toBeAdded);
+                }
+            } else if (event.action.equals("DELETE")) {
+                currentNode = event.nodeOfLastEvent.next;
+                this.deleteCharFromTextStorage(root);
+            }
+        }
+        undoing = false;
+    }
+    
+    public void reformatText(double xMax, double yMax) {
+        /* Recalculates all of the text positions and textwraps. xMax and yMax are the window limits */
+        Node prevSpace = null;  //Has there been a space on this line yet?
         lineNumbers.clear();
         boolean isStartNextLine = true;
         Node runner = sentinel.next;
@@ -178,13 +260,13 @@ public class TextStorage {
         double currY = STARTING_TEXT_POSITION_Y;
         while (runner != sentinel) {
             Text text = runner.t;
-            /* keep track of the words between spaces **/
+            // Keep track of the words between spaces
             if (Objects.equals(text.getText(), " ")) {
                 prevSpace = runner;
             }
-            /* if reach end of line, newline **/
-                if (currX + Editor.getTextWidth(text) >= xMax) { //if the next char would exceed the margin
-                    /* if there had a been a space earlier and the right edge is reached, wrap the text starting from that earlier space **/
+            // If reach end of line, newline
+                if (currX + Editor.getTextWidth(text) >= xMax) { 
+                    /* If there had a been a space earlier and the right edge is reached, wrap the text starting from that earlier space */
                     if (runner.t.getText().equals(" ")) {
                         text.setX(currX);
                         text.setY(currY);
@@ -203,12 +285,12 @@ public class TextStorage {
                 if (isStartNextLine && currX == STARTING_TEXT_POSITION_X) {
                     lineNumbers.put(calcLineNumber(currY), runner);
                     isStartNextLine = false;
-                    prevSpace = null;   //there aren't any spaces in this new line yet
+                    prevSpace = null;   // There aren't any spaces in this new line yet
                 }
                 text.setX(currX);
                 text.setY(currY);
                 currX += Editor.getTextWidth(text);
-                if (Objects.equals(text.getText(), "\n")) { //if the node is a newline
+                if (Objects.equals(text.getText(), "\n")) {
                     currX = STARTING_TEXT_POSITION_X;
                     currY += LINE_HEIGHT;
                     isStartNextLine = true;

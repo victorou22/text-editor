@@ -69,22 +69,23 @@ public class Cursor {
         timeline.play();
     }
     
-    public void updateCursor(String status) {    //updates the cursor after adding a Text with one Text width
+    public void updateCursor(String status) {    
+        /* Updates the cursor depending on the situation */
         Text currText = buffer.getCurrText();
         
         switch(status)
         {
             case "ENTER":
-                cursor.setX(STARTING_CURSOR_X);
-                cursor.setY(currText.getY() + LINE_HEIGHT);
-                break;
+            cursor.setX(STARTING_CURSOR_X);
+            cursor.setY(currText.getY() + LINE_HEIGHT);
+            break;
             case "AFTER":   //put the cursor after the text
-                cursor.setX(currText.getX() + Editor.getTextWidth(currText));
-                cursor.setY(currText.getY());
-                break;
+            cursor.setX(currText.getX() + Editor.getTextWidth(currText));
+            cursor.setY(currText.getY());
+            break;
             case "BEFORE":
-                cursor.setX(currText.getX());
-                cursor.setY(currText.getY());
+            cursor.setX(currText.getX());
+            cursor.setY(currText.getY());
         }
     }
     
