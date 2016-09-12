@@ -1,0 +1,6 @@
+{
+  "name": "Text-editor",
+  "tagline": "",
+  "body": "# text-editor\r\n\r\nText Editor Application  \r\nAuthor: Victor Ou\r\n\r\nCreated according to the approximate specifications from  \r\nhttp://datastructur.es/sp16/materials/proj/proj2/proj2.html\r\n\r\nCompile using a *.txt file name as the first command line argument.  \r\nIf the file exists, it will be opened. If not, a blank document will be created.\r\n\r\nA basic text editor that supports the following features:\r\n\r\n-  Current position is denoted with a flashing cursor  \r\n-  Word wrap  \r\n-  Newlines  \r\n-  Backspace (Not delete though)  \r\n-  Open a file  \r\n  -  The file name of the file to be opened should be given as the first command line argument. (mandatory)  \r\n-  Save a file (Ctrl/Cmd+S)  \r\n  - The file is written to the name of first command line argument.  \r\n-  Arrow keys for navigation  \r\n-  Mouse input (clicking moves the cursor as you would expect)\r\n-  Window re-sizing  \r\n-  Vertical scrolling using scroll bar  \r\n-  Undo and redo (Ctrl/Cmd+Z and Ctrl/Cmd+Y)  \r\n-  Changing the font size by 4 points (Ctrl/Cmd+PLUS and Ctrl/Cmd+MINUS)\r\n",
+  "note": "Don't delete this file! It's used internally to help with page regeneration."
+}
