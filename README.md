@@ -4,7 +4,7 @@
 * Text Editor Application
 * @author Victor Ou
 *
-*Created according to the approximate specifications of 
+* Created according to the approximate specifications of 
 * http://datastructur.es/sp16/materials/proj/proj2/proj2.html
 *
 * (Compile using a *.txt file name as the first command line argument. 
