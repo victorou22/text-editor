@@ -6,7 +6,7 @@ Author: Victor Ou
 Created according to the approximate specifications from  
 http://datastructur.es/sp16/materials/proj/proj2/proj2.html
 
-Compile and run in terminal using a *.txt file name as the first command line argument.  
+Compile and run in terminal using a \*.txt file name as the first command line argument.  
 Example:  
 `javac editor/*.java`  
 `java editor.Editor test.txt`  
